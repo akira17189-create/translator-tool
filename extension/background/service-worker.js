@@ -106,11 +106,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ─── On install: set storage defaults ────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(
-    ['port', 'bilingualEnabled'],
+    ['port', 'translateEnabled', 'bilingualEnabled'],
     prefs => {
       const defaults = {};
-      if (prefs.port              === undefined) defaults.port              = DEFAULT_PORT;
-      if (prefs.bilingualEnabled  === undefined) defaults.bilingualEnabled  = true;
+      if (prefs.port             === undefined) defaults.port             = DEFAULT_PORT;
+      if (prefs.translateEnabled === undefined) defaults.translateEnabled = true;
+      if (prefs.bilingualEnabled === undefined) defaults.bilingualEnabled = true;
       if (Object.keys(defaults).length) {
         chrome.storage.local.set(defaults);
       }

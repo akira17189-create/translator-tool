@@ -2,17 +2,18 @@
 // Boots bilingual.js and routes popup toggle messages.
 //
 // Pref semantics:
+//   translateEnabled (bool, default true)
+//     Master kill switch. Off = NO translation anywhere, period.
 //   bilingualEnabled (bool, default true)
-//     true  → 双语对照 (source + translation both visible)
-//     false → 仅显示译文 (replace mode — source hidden via CSS)
-//   site:<hostname> (bool, optional)
-//     true  → force-translate this site
-//     false → never translate this site (master kill switch)
-//     unset → translate by default
-//
-// Translation runs whenever the site isn't explicitly disabled. The toggle
-// in the popup only changes display mode, it doesn't enable/disable
-// translation any more.
+//     Display mode when translation runs.
+//       true  → 双语对照 (source + translation both visible)
+//       false → 仅显示译文 (replace mode — source hidden via CSS)
+//   site:<hostname> (bool, default true)
+//     Per-site override.
+//       false → never translate this site
+//       true / undefined → translate this site (subject to master)
+//   hoverEnabled (bool, default false)
+//     Ctrl+' on hover triggers single-paragraph translate.
 
 'use strict';
 
@@ -42,15 +43,22 @@
     }
   }
 
+  function shouldTranslate(prefs, sitePrefs) {
+    // Master kill switch beats everything.
+    if (prefs.translateEnabled === false) return false;
+    // Per-site explicit OFF beats default.
+    const siteVal = sitePrefs[getSiteKey()];
+    if (siteVal === false) return false;
+    // Otherwise translate.
+    return true;
+  }
+
   // ─── Init from saved prefs ──────────────────────────────────────────
   chrome.storage.local.get(
-    { bilingualEnabled: true, hoverEnabled: false },
+    { translateEnabled: true, bilingualEnabled: true, hoverEnabled: false },
     prefs => {
       chrome.storage.local.get([getSiteKey()], sitePrefs => {
-        const siteEnabled = sitePrefs[getSiteKey()];
-        const siteAllows  = (siteEnabled === false) ? false : true;
-
-        if (siteAllows) {
+        if (shouldTranslate(prefs, sitePrefs)) {
           bootBilingual(modeFromBool(prefs.bilingualEnabled));
         }
         if (window.ttBilingual?.setHover) {
@@ -62,23 +70,34 @@
 
   // ─── Toggle messages from popup ────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'TOGGLE_ENABLED') {
+      // Master switch.
+      if (msg.enabled === false) {
+        shutdownBilingual();
+      } else {
+        // Re-evaluate everything — site might still be explicitly OFF.
+        chrome.storage.local.get(
+          { bilingualEnabled: true },
+          prefs => {
+            chrome.storage.local.get([getSiteKey()], sitePrefs => {
+              const siteVal = sitePrefs[getSiteKey()];
+              if (siteVal === false) return;  // site explicitly off
+              bootBilingual(modeFromBool(prefs.bilingualEnabled));
+            });
+          }
+        );
+      }
+      return;
+    }
+
     if (msg.type === 'TOGGLE_BILINGUAL') {
-      // Repurposed: this no longer enables/disables translation, it
-      // switches between bilingual ↔ replace display modes. Translation
-      // is on whenever the site allows it.
+      // Display mode only — doesn't enable/disable.
       const mode = modeFromBool(msg.enabled);
-      try {
-        console.log('[tt-content] TOGGLE_BILINGUAL', {
-          enabled: msg.enabled,
-          mode,
-          bilingualActive,
-        });
-      } catch (_) {}
       if (bilingualActive) {
         window.ttBilingual.setDisplayMode?.(mode);
       } else {
-        // First toggle on a brand-new site: also start translating.
-        bootBilingual(mode);
+        // Translation might be off via master or per-site. Don't auto-enable
+        // here — only the master and per-site toggles do that.
       }
     }
 
@@ -87,18 +106,17 @@
     }
 
     if (msg.type === 'TOGGLE_SITE') {
-      const key = getSiteKey();
-      if (msg.enabled === null) {
-        chrome.storage.local.remove(key);
-      } else {
-        chrome.storage.local.set({ [key]: msg.enabled });
-      }
+      // Per-site explicit on/off.
       if (msg.enabled === false) {
         shutdownBilingual();
       } else {
-        chrome.storage.local.get({ bilingualEnabled: true }, prefs => {
-          bootBilingual(modeFromBool(prefs.bilingualEnabled));
-        });
+        chrome.storage.local.get(
+          { translateEnabled: true, bilingualEnabled: true },
+          prefs => {
+            if (prefs.translateEnabled === false) return;
+            bootBilingual(modeFromBool(prefs.bilingualEnabled));
+          }
+        );
       }
     }
 

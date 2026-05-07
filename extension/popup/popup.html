@@ -323,6 +323,16 @@
     <div id="toggleCard" class="toggle-card" hidden>
       <div class="toggle-row">
         <div class="info">
+          <div class="label">翻译网页</div>
+          <div class="hint">总开关，关闭后所有网站都不再翻译</div>
+        </div>
+        <button id="toggleEnabled" class="toggle" type="button" aria-pressed="true" aria-label="翻译网页总开关">
+          <span class="knob"></span>
+        </button>
+      </div>
+      <div class="divider"></div>
+      <div class="toggle-row">
+        <div class="info">
           <div class="label">双语对照</div>
           <div class="hint">开：原文 + 译文 · 关：仅显示译文（替换原文）</div>
         </div>
@@ -333,10 +343,10 @@
       <div class="divider"></div>
       <div class="toggle-row">
         <div class="info">
-          <div class="label">总是翻译该网站</div>
+          <div class="label">翻译此网站</div>
           <div class="hint" id="siteLabel">当前网站</div>
         </div>
-        <button id="toggleSite" class="toggle" type="button" aria-pressed="false" aria-label="总是翻译该网站">
+        <button id="toggleSite" class="toggle" type="button" aria-pressed="false" aria-label="翻译此网站">
           <span class="knob"></span>
         </button>
       </div>
