@@ -1,0 +1,184 @@
+# 翻译工具
+
+一个能翻译网页 + 全局划词翻译的小工具。专门为读英文小说、新闻、文档优化，**完全免费、不用注册付费 LLM**（用智谱 GLM-4-Flash 免费额度）。
+
+> 🆓 用智谱免费 API · 🌐 浏览器整页双语对照 · ✂️ 任意软件里划词都能翻 · 📚 适合 AO3 / 国外文档站
+
+---
+
+## 我是普通用户，怎么用
+
+### 1️⃣ 下载并安装桌面端
+
+1. 进入项目的 [**Releases 页面**](https://github.com/akira17189-create/translator-tool/releases)
+2. 下载最新的 `翻译工具 Setup x.x.x.exe`
+3. 双击运行
+4. **会弹「Windows 已保护你的电脑」** —— 因为我没买代码签名证书。点：
+   - **更多信息** → **仍要运行**
+5. 选安装目录，下一步下一步装完
+
+桌面会出现「翻译工具」快捷方式。打开它，托盘里（屏幕右下角）会出现一个橙色「译」字图标。
+
+### 2️⃣ 申请一个免费的 API Key（5 分钟）
+
+> 这一步是必须的，没有 Key 翻译不动。**完全免费、不用充钱**。
+
+1. 浏览器打开 [https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)
+2. 用手机号注册一下智谱账号
+3. 进控制台后点「**+ 添加新的 API Key**」
+4. 起个名字（随便，比如「翻译工具」），点确定
+5. **复制生成出来的那串 Key**（看起来像 `xxxx.yyyy`）—— 这就是你的钥匙
+
+> 智谱的 GLM-4-Flash 模型是 **永久免费**，不限调用次数（有速率限制但日常够用）。
+
+### 3️⃣ 把 Key 填到工具里
+
+1. 双击桌面「翻译工具」打开窗口
+2. 左边点「**API 配置**」→ 右上角「**+新增配置**」
+3. 在「**快捷预设**」里点 `🆓 智谱 GLM-4-Flash · 推荐网页`
+4. URL 和模型自动填好了，**只需要把刚才复制的 Key 粘到「API Key」那一栏**
+5. 点「**测试连接**」—— 应该看到「✓ 连接成功，回复：OK」
+6. 点「**保存**」
+7. 回到列表，那条配置点「**网页用**」按钮 —— 它会变成深色，前面有「网页翻译」标签
+
+### 4️⃣（推荐）再加一条划词专用配置
+
+GLM-4-Flash 适合翻译大段，但划词要响应快，所以再加一条快版的：
+
+1. 同样点「+新增配置」
+2. 选 `🆓 智谱 GLM-4-FlashX · 推荐划词`
+3. 填上**同一把 API Key**（智谱所有模型共用一把 Key）
+4. 保存 → 点「**划词用**」按钮
+
+现在你应该有两条配置，一条标着「网页翻译」，一条标着「划词翻译」。
+
+### 5️⃣ 开启划词翻译开关
+
+1. 左边点「**通用设置**」
+2. 把「**全局划词翻译**」开关打开
+3. 把「**鼠标选中自动翻译**」也打开（不用按快捷键，直接选中文字就翻译）
+4. 默认快捷键是 `Alt+Z`（如果跟别的软件冲突可以改）
+
+至此桌面端配好了。**在任何软件里**（Word、PDF 阅读器、聊天窗口、记事本）选中英文，会自动弹翻译窗。
+
+### 6️⃣ 装浏览器扩展（用于网页双语对照）
+
+> 桌面端的划词只是弹一个小窗。如果你想读整页英文，需要装浏览器扩展实现「英文 + 中文上下行对照」。
+
+1. 进 [**Releases 页面**](https://github.com/akira17189-create/translator-tool/releases) 下载最新的 `extension.zip`
+2. 解压到任意目录（**别删了，扩展靠这个目录跑**，比如解压到 `D:\翻译工具扩展\`）
+3. Chrome / Edge 浏览器地址栏输入：`chrome://extensions/`
+4. 右上角打开「**开发者模式**」
+5. 点「**加载已解压的扩展程序**」
+6. 选刚才解压出来的那个目录
+7. 工具栏会出现橙色「译」字图标，点一下能开关功能
+
+### 7️⃣ 享用
+
+- **任意软件划词** → 鼠标拖选英文 → 自动弹翻译
+- **任意软件按 `Alt+Z`** → 翻译选中的文字
+- **浏览器读英文网页** → 自动在段落下方插入中文译文
+- 不想看原文？浏览器扩展弹窗里关掉「双语对照」开关 → 译文直接替换原文
+
+---
+
+## 常见问题
+
+### Q: 桌面端打开后窗口不见了？
+A: 它躲到右下角托盘里了。找到那个橙色「译」字图标，**双击或右键 → 打开设置**。
+
+### Q: 选了文字按 Alt+Z 没反应？
+A: 检查：
+1. 桌面端「通用设置」里的「全局划词翻译」开关是不是开着
+2. 托盘图标右键看「✓ 划词翻译已开启」对不对
+3. Alt+Z 跟别的软件（QQ、网易云、笔记软件）冲突 → 设置里换成 `Alt+X` 之类的
+
+### Q: 浏览器扩展显示「未连接」？
+A: 桌面端没在跑。**先打开桌面端，扩展会自动连上**。
+
+### Q: 翻译特别慢/失败？
+A: 可能智谱限流了（免费版有速率限制）。等 30 秒重试，或者点扩展弹窗里「重试翻译」。
+
+### Q: 翻译质量不满意？
+A: 试试「智谱 GLM-Z1-Flash · 推理型」预设 —— 慢一倍但更聪明，适合小说、文学性长段落。
+
+### Q: 怎么删掉？
+A: 控制面板「卸载程序」找「翻译工具」卸载。如果还想清干净配置：删 `%APPDATA%\翻译工具` 这个文件夹（在文件资源管理器地址栏粘 `%APPDATA%` 回车）。
+
+---
+
+## 我是开发者，怎么自己改代码 / 编译
+
+### 环境
+
+- Windows 10/11
+- [Node.js](https://nodejs.org/) 18+
+- pnpm 8+：`npm install -g pnpm`
+
+### 跑起来
+
+```powershell
+git clone https://github.com/akira17189-create/translator-tool.git
+cd translator-tool
+
+# 装依赖（首次会装 Electron ~80MB，慢）
+pnpm install
+
+# 跑桌面端 dev
+cd desktop
+pnpm dev
+```
+
+浏览器扩展不用编译，`extension/` 目录直接在 `chrome://extensions/` 加载已解压。
+
+### 打包成 .exe
+
+```powershell
+cd desktop
+pnpm build      # 编译渲染层和主进程
+pnpm dist       # 打包成 NSIS 安装程序
+```
+
+输出在 `desktop/dist/翻译工具 Setup x.x.x.exe`。
+
+> ⚠️ pnpm + electron-builder 在 Windows 上有兼容性坑。如果 `pnpm dist` 报 `cannot find prebuild-install` 或 `pnpm.cjs is not a valid Win32 application`：
+>
+> 在 `desktop/` 下创建 `.npmrc`，内容写：
+> ```
+> shamefully-hoist=true
+> node-linker=hoisted
+> ```
+> 然后 `pnpm install` 重装一次依赖再试。
+
+### 项目结构
+
+```
+translator-tool/
+├── desktop/         # Electron 桌面端（设置 / 划词弹窗 / 全局快捷键 / HTTP 服务）
+│   └── src/
+│       ├── main/    # 主进程：globalHook、translate、server、database
+│       ├── preload/ # IPC 桥
+│       └── renderer/# React UI（settings/popup）
+├── extension/       # 浏览器扩展（双语对照）
+│   ├── content/     # bilingual.js — 网页内翻译注入
+│   ├── background/  # service-worker.js — 转发请求到桌面端
+│   └── popup/       # 弹窗 UI
+└── README.md
+```
+
+### 数据存储位置
+
+- 桌面端：`%APPDATA%\翻译工具\data.db`（SQLite）
+- 扩展：`chrome.storage.local`（每个浏览器 profile 独立）
+
+### 通信协议
+
+桌面端起一个 HTTP 服务在 `127.0.0.1:27463`，扩展通过它调翻译 / 词典 / 生词本。详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
+
+---
+
+## License
+
+MIT —— 随便用，欢迎 fork / PR。
+
+如果觉得有用给个 ⭐ ~

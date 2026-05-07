@@ -1,0 +1,15 @@
+{
+  "name": "translator-tool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "内部翻译辅助工具",
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build",
+    "build:extension": "echo '浏览器插件无需构建，直接加载 extension/ 目录'"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

@@ -1,0 +1,68 @@
+/* content/styles.css
+ * Styles for the in-page bilingual translation injection.
+ * The selection popup used to live here too, but it moved to the desktop
+ * app's globalHook (which covers all applications, not just the browser).
+ */
+
+/* ─── Bilingual injected line ────────────────────────────────────────── */
+/* The translation element is a clone of the source element's tag + class,
+ * so all host-page styling (font, size, alignment, accessibility hiding,
+ * grid placement, etc.) applies naturally. We add this class only as a
+ * marker so SELECTORS can exclude these via :not(.tt-bilingual-line) and
+ * give the entrance a small fade-in. Don't add layout overrides here —
+ * they would fight the host CSS we deliberately want to inherit.
+ */
+.tt-bilingual-line {
+  animation: tt-bilingual-rise 0.3s ease-out both;
+}
+
+/* Replace mode: hide the source element entirely so the cloned-tag
+ * translation that sits right after it occupies the visual slot alone. */
+.tt-source-hidden {
+  display: none !important;
+}
+
+@keyframes tt-bilingual-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Translation loading spinner ─────────────────────────────────────── */
+.tt-spinner-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.5;
+}
+
+.tt-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: tt-spin 0.75s linear infinite;
+  color: #888;
+}
+
+@keyframes tt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Inline failure indicator on paragraphs that exhausted retries ──── */
+.tt-bilingual-fail {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.75em;
+  font-weight: 500;
+  color: #CF4500;
+  background: rgba(243, 115, 56, 0.12);
+  border: 1px solid rgba(207, 69, 0, 0.35);
+  border-radius: 6px;
+  vertical-align: middle;
+  cursor: help;
+  user-select: none;
+}

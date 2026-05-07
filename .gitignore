@@ -1,0 +1,24 @@
+node_modules/
+dist/
+out/
+.DS_Store
+Thumbs.db
+
+# 本地数据库（含 API Key，不能提交）
+*.db
+!desktop/resources/.gitkeep
+
+# 环境变量
+.env
+.env.local
+
+# 编辑器/工具临时文件
+*.log
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Electron / electron-builder 缓存
+.electron-builder-cache/
+*.blockmap

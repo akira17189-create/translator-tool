@@ -1,0 +1,3 @@
+将 ecdict.db 放在这个目录下。
+下载地址：https://github.com/skywind3000/ECDICT/releases
+下载 ecdict-sqlite-28.zip，解压后将 ecdict.db 放到此处。
