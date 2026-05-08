@@ -7,6 +7,7 @@
   const statusText   = document.getElementById('statusText');
   const alertCard    = document.getElementById('alertCard');
   const toggleCard   = document.getElementById('toggleCard');
+  const tExt         = document.getElementById('toggleExtension');
   const tEnabled     = document.getElementById('toggleEnabled');
   const tBi          = document.getElementById('toggleBilingual');
   const tHover       = document.getElementById('toggleHover');
@@ -39,6 +40,22 @@
     });
   }
 
+  // Broadcast to every open tab. Used for the master switch so a single OFF
+  // click stops translation everywhere, not just the active tab. Tabs that
+  // don't have our content script (chrome://, the web store) just error out
+  // silently — we swallow chrome.runtime.lastError so the console stays clean.
+  function broadcastToAllTabs(msg) {
+    chrome.tabs.query({}, tabs => {
+      tabs.forEach(tab => {
+        try {
+          chrome.tabs.sendMessage(tab.id, msg, () => {
+            void chrome.runtime.lastError;
+          });
+        } catch (_) {}
+      });
+    });
+  }
+
   function getCurrentHostname() {
     return new Promise(resolve => {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
@@ -61,11 +78,22 @@
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
 
+  function applyMasterLock(masterOn) {
+    toggleCard.classList.toggle('master-off', !masterOn);
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────
   async function init() {
     const status = await sendMessage({ type: 'CHECK_STATUS' });
     const online = !!(status && status.online);
     renderStatus(online);
+
+    // If the desktop is up now, wake any content scripts that didn't boot
+    // earlier (e.g. user opened the page before launching the desktop app).
+    // This is a best-effort poke — tabs that are already booted just no-op.
+    if (online) {
+      broadcastToAllTabs({ type: 'WAKE_UP' });
+    }
 
     const hostname = await getCurrentHostname();
     if (siteLabel && hostname) {
@@ -74,12 +102,15 @@
 
     const prefs = await new Promise(resolve =>
       chrome.storage.local.get(
-        ['bilingualEnabled', 'hoverEnabled'],
+        ['extensionEnabled', 'bilingualEnabled', 'hoverEnabled'],
         resolve
       )
     );
+    const extensionOn = prefs.extensionEnabled !== false;  // default ON
+    renderToggle(tExt,   extensionOn);
     renderToggle(tBi,    prefs.bilingualEnabled ?? true);
     renderToggle(tHover, prefs.hoverEnabled     ?? false);
+    applyMasterLock(extensionOn);
 
     // Per-site toggle: undefined = default ON (translate by default).
     // Only false means "explicitly disabled here".
@@ -103,6 +134,17 @@
   }
 
   // ─── Wire toggles ──────────────────────────────────────────────────────
+  // 扩展启用 — global kill switch. OFF = the extension is dormant on every
+  // site, regardless of any per-site preference. Persistent. Broadcast to
+  // every open tab so all of them stop/start at once, not just the active.
+  tExt.addEventListener('click', async () => {
+    const next = !tExt.classList.contains('on');
+    renderToggle(tExt, next);
+    applyMasterLock(next);
+    await new Promise(r => chrome.storage.local.set({ extensionEnabled: next }, r));
+    broadcastToAllTabs({ type: 'TOGGLE_EXTENSION', enabled: next });
+  });
+
   // 启用翻译 — current page only. NOT persisted: closing the tab or reloading
   // resets it to whatever 翻译此网站 says. The user's intent is just "for now,
   // run/stop translation here".

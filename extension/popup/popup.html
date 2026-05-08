@@ -260,6 +260,16 @@
 
   [hidden] { display: none !important; }
 
+  /* When 扩展启用 (master) is OFF, gray out all secondary controls so the
+   * user sees they're inert until the master is back on. The master row
+   * itself (.is-master) is always interactive — it's the way back. */
+  .toggle-card.master-off .toggle-row:not(.is-master),
+  .toggle-card.master-off .divider,
+  .toggle-card.master-off .action-row {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
   /* ─── Divider ─────────────────────────────────────────────────────── */
   .divider {
     height: 1px;
@@ -321,6 +331,16 @@
 
     <!-- Connected toggles -->
     <div id="toggleCard" class="toggle-card" hidden>
+      <div class="toggle-row is-master">
+        <div class="info">
+          <div class="label">扩展启用</div>
+          <div class="hint">总开关 · 关闭后任何网站都不会自动翻译</div>
+        </div>
+        <button id="toggleExtension" class="toggle" type="button" aria-pressed="true" aria-label="扩展总开关">
+          <span class="knob"></span>
+        </button>
+      </div>
+      <div class="divider"></div>
       <div class="toggle-row">
         <div class="info">
           <div class="label">启用翻译</div>
@@ -375,7 +395,7 @@
       </svg>
       <span>设置</span>
     </button>
-    <span class="version">v0.1.2</span>
+    <span class="version">v0.1.3</span>
   </footer>
 
   <script src="popup.js"></script>

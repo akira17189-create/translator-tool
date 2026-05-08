@@ -2,10 +2,14 @@
 // Boots bilingual.js and routes popup toggle messages.
 //
 // Pref semantics:
+//   extensionEnabled (bool, default true)
+//     Global kill switch (扩展启用 in popup). false = the extension is
+//     dormant on every site, regardless of every other pref. Beats site:<host>
+//     and 启用翻译.
 //   site:<hostname> (bool, default true)
 //     Persistent per-host preference. ON or undefined = "translate this site
 //     by default on every visit"; false = "don't auto-translate". The popup's
-//     翻译此网站 toggle controls this.
+//     默认翻译此网站 toggle controls this.
 //   bilingualEnabled (bool, default true)
 //     Display mode when translation runs.
 //       true  → 双语对照 (source + translation both visible)
@@ -13,14 +17,24 @@
 //   hoverEnabled (bool, default false)
 //     Ctrl+' on hover triggers single-paragraph translate.
 //
-// Note: 启用翻译 (the popup's master toggle) is intentionally NOT persisted —
+// Note: 启用翻译 (the popup's per-page toggle) is intentionally NOT persisted —
 // it represents "is this page actively translating right now". Initialised
-// from site:<host> on load, then user-controlled in-session via GET_STATE /
-// TOGGLE_ENABLED messages. Closing the tab or reloading drops it.
+// from extensionEnabled + site:<host> on load, then user-controlled in-session
+// via GET_STATE / TOGGLE_ENABLED messages. Closing the tab or reloading drops it.
 
 'use strict';
 
 (function () {
+  // First thing on every load: nuke any leftover translation DOM from a
+  // previous content script run. This matters in two cases —
+  //   1. The extension was reloaded mid-session, the old content script's
+  //      runtime is dead but its injected <span class="tt-bilingual-line">
+  //      etc. are still sitting in the page. Without this cleanup the user
+  //      sees stale translations even after master OFF.
+  //   2. Defensive — if anything ever leaves orphaned spinners/fail marks.
+  // On a fresh page load there's nothing to clean and destroy() is a no-op.
+  try { window.ttBilingual?.destroy?.(); } catch (_) {}
+
   let bilingualActive = false;
 
   function getSiteKey() {
@@ -53,22 +67,37 @@
   }
 
   // ─── Init from saved prefs ──────────────────────────────────────────
-  // Initial decision is purely site:<host>: if user has explicitly turned
-  // 翻译此网站 OFF for this host, don't translate; otherwise go.
-  chrome.storage.local.get(
-    { bilingualEnabled: true, hoverEnabled: false },
-    prefs => {
-      chrome.storage.local.get([getSiteKey()], sitePrefs => {
-        const siteVal = sitePrefs[getSiteKey()];
-        if (siteVal !== false) {
-          bootBilingual(modeFromBool(prefs.bilingualEnabled));
-        }
-        if (window.ttBilingual?.setHover) {
-          window.ttBilingual.setHover(prefs.hoverEnabled);
-        }
-      });
-    }
-  );
+  // Order of veto: extensionEnabled (global kill) → desktop online status
+  // → site:<host> (per-host). If any blocks, do nothing — the page should
+  // look exactly like the extension wasn't installed.
+  //
+  // Wrapped in a function so the WAKE_UP message (sent by the popup when it
+  // detects the desktop coming online) can re-run the same gate sequence
+  // and boot without requiring a page reload.
+  function tryBoot() {
+    chrome.storage.local.get(
+      { extensionEnabled: true, bilingualEnabled: true, hoverEnabled: false },
+      prefs => {
+        if (prefs.extensionEnabled === false) return;
+        // Check desktop server is up before booting — otherwise the
+        // bilingual queue would just rack up "[翻译失败]" marks while the
+        // user has no idea what's wrong.
+        chrome.runtime.sendMessage({ type: 'CHECK_STATUS' }, status => {
+          if (chrome.runtime.lastError || !status?.online) return;
+          chrome.storage.local.get([getSiteKey()], sitePrefs => {
+            const siteVal = sitePrefs[getSiteKey()];
+            if (siteVal !== false && !bilingualActive) {
+              bootBilingual(modeFromBool(prefs.bilingualEnabled));
+            }
+            if (window.ttBilingual?.setHover) {
+              window.ttBilingual.setHover(prefs.hoverEnabled);
+            }
+          });
+        });
+      }
+    );
+  }
+  tryBoot();
 
   // ─── Toggle messages from popup ────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -76,6 +105,30 @@
       // Popup uses this to render the 启用翻译 toggle to match what's
       // actually happening on the page right now.
       sendResponse({ enabled: bilingualActive });
+      return;
+    }
+
+    if (msg.type === 'WAKE_UP') {
+      // Popup detected the desktop server came online — give boot another
+      // shot. tryBoot() is idempotent (checks bilingualActive and re-pings
+      // CHECK_STATUS) so calling it on tabs that are already running is
+      // harmless.
+      tryBoot();
+      return;
+    }
+
+    if (msg.type === 'TOGGLE_EXTENSION') {
+      // Global kill switch. OFF: stop unconditionally. ON: re-evaluate
+      // site:<host> just like a fresh init — if site is explicitly OFF
+      // we still don't boot.
+      if (msg.enabled === false) {
+        shutdownBilingual();
+      } else {
+        chrome.storage.local.get([getSiteKey()], sitePrefs => {
+          if (sitePrefs[getSiteKey()] === false) return;
+          bootFromStoredMode();
+        });
+      }
       return;
     }
 

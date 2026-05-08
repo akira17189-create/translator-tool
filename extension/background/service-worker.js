@@ -56,7 +56,22 @@ function handleTranslate({ text, mode = 'word' }) {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ text, sourceLang: 'en', targetLang: 'zh', mode }),
-  }, timeoutMs);
+  }, timeoutMs).then(data => {
+    // Desktop replies 200 with `{ translation: "", offline: true, error: ... }`
+    // when the LLM call itself succeeded HTTP-wise but came back empty —
+    // typically rate limiting, quota exhaustion (智谱 余额不足 → 429/1113),
+    // or a misconfigured model. From the page's perspective this is the
+    // same as "the desktop is unreachable": no per-paragraph retry will
+    // help, so we collapse it to a generic 'offline' marker. bilingual.js
+    // then silent-retries on a long backoff instead of burning the retry
+    // budget and pasting "[翻译失败]" on every paragraph. Full details are
+    // still logged here so the SW devtools console shows the real error.
+    if (data && !data.error && data.translation) return data;
+    try {
+      console.warn('[tt] translate failed; collapsing to offline:', data);
+    } catch (_) {}
+    return { error: 'offline' };
+  });
 }
 
 function handleLookup({ word }) {
@@ -103,18 +118,57 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true; // keep message channel open for async response
 });
 
-// ─── On install: set storage defaults ────────────────────────────────────
-chrome.runtime.onInstalled.addListener(() => {
+// ─── On install / update: defaults + re-inject content scripts ─────────
+// Re-injection matters: when an extension is reloaded (chrome://extensions
+// → 重新加载), already-open tabs keep their OLD content script — the
+// runtime is invalidated so it can't receive popup messages, but its DOM
+// artifacts (translation lines, spinners) stay in place. Without this,
+// users would have to manually reload every tab to recover. Pushing fresh
+// content scripts via scripting.executeScript fixes that automatically.
+async function reinjectAllTabs() {
+  const manifest = chrome.runtime.getManifest();
+  const cs = manifest.content_scripts && manifest.content_scripts[0];
+  if (!cs) return;
+
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    // chrome://, about:, edge://, the web store etc. reject scripting.
+    if (!/^https?:|^file:/.test(tab.url)) continue;
+
+    try {
+      if (cs.js && cs.js.length) {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: cs.js,
+        });
+      }
+      if (cs.css && cs.css.length) {
+        await chrome.scripting.insertCSS({
+          target: { tabId: tab.id },
+          files: cs.css,
+        });
+      }
+    } catch (_) {
+      // tab closed mid-iteration, restricted host, etc. — skip silently.
+    }
+  }
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
   chrome.storage.local.get(
-    ['port', 'translateEnabled', 'bilingualEnabled'],
+    ['port', 'bilingualEnabled'],
     prefs => {
       const defaults = {};
       if (prefs.port             === undefined) defaults.port             = DEFAULT_PORT;
-      if (prefs.translateEnabled === undefined) defaults.translateEnabled = true;
       if (prefs.bilingualEnabled === undefined) defaults.bilingualEnabled = true;
       if (Object.keys(defaults).length) {
         chrome.storage.local.set(defaults);
       }
     }
   );
+
+  if (reason === 'install' || reason === 'update') {
+    reinjectAllTabs();
+  }
 });

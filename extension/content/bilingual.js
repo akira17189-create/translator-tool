@@ -9,6 +9,17 @@
 'use strict';
 
 (function () {
+  // If the extension was reloaded mid-session and we're being re-injected on
+  // top of an already-running content script, the old IIFE's observers and
+  // batch queue are still alive in their original closure — but their
+  // chrome.runtime is now invalidated, so every TRANSLATE message they
+  // attempt fails, retries hit MAX_RETRIES, and the page fills up with
+  // "[翻译失败]" badges. Calling the OLD ttBilingual.destroy() (the one
+  // captured by `window.ttBilingual` BEFORE this IIFE overwrites it) tears
+  // down those orphan observers cleanly. On a fresh page load there's no
+  // previous instance and this is a no-op.
+  try { window.ttBilingual?.destroy?.(); } catch (_) {}
+
   const BILINGUAL_CLASS  = 'tt-bilingual-line';
   const FAIL_CLASS       = 'tt-bilingual-fail';
   const SPINNER_CLASS    = 'tt-spinner-wrap';
@@ -285,9 +296,46 @@
     });
   }
 
+  // 'offline' / 'send-failed' come from the service worker when it can't
+  // reach the desktop server, the SW itself is restarting, or the LLM API
+  // returned a systemic error (rate limit, quota — see service-worker.js's
+  // handleTranslate normalisation). They're environmental, not paragraph-
+  // specific — the paragraph would translate fine if the underlying issue
+  // were resolved. So we treat them differently: don't burn retry budget,
+  // don't paint "[翻译失败]" marks (the popup already shows status), don't
+  // flash a spinner per attempt (visual noise), and cap retries so a
+  // permanently-broken config doesn't loop forever.
+  const OFFLINE_ERRORS = new Set(['offline', 'send-failed']);
+  const OFFLINE_RETRY_DELAY_MS = 8000;
+  const OFFLINE_MAX_RETRIES = 6;
+  const DATA_OFFLINE_RETRY = 'data-tt-offline';
+
   function requeueOnFailure(el, errMsg) {
-    const retryCount = parseInt(el.getAttribute(DATA_RETRY) || '0', 10);
     el.setAttribute('data-tt-error', errMsg);
+
+    if (OFFLINE_ERRORS.has(errMsg)) {
+      removeSpinner(el);
+      el.removeAttribute(DATA_ATTR);
+
+      const offlineCount = parseInt(el.getAttribute(DATA_OFFLINE_RETRY) || '0', 10) + 1;
+      el.setAttribute(DATA_OFFLINE_RETRY, String(offlineCount));
+      // After enough silent attempts, give up quietly — the user has open
+      // popup feedback and a 重试翻译 button if they fix the underlying
+      // issue. Keeps an idle tab from poking a permanently-broken endpoint.
+      if (offlineCount >= OFFLINE_MAX_RETRIES) return;
+
+      setTimeout(() => {
+        if (!document.body.contains(el)) return;
+        if (el.getAttribute(DATA_ATTR) === '1') return;
+        el.setAttribute(DATA_ATTR, 'pending');
+        // No spinner — for systemic errors, repeated spinner flashes are
+        // just noise. The translation will simply appear if/when it works.
+        enqueueParagraph(el);
+      }, OFFLINE_RETRY_DELAY_MS);
+      return;
+    }
+
+    const retryCount = parseInt(el.getAttribute(DATA_RETRY) || '0', 10);
 
     if (retryCount >= MAX_RETRIES) {
       removeSpinner(el);
@@ -384,6 +432,24 @@
     return false;
   }
 
+  // Apply defensive properties via inline style + !important. External CSS
+  // !important rules from the host page can match our class with higher
+  // specificity and force vertical writing-mode / RTL direction on us.
+  // Inline style with !important wins over almost any author selector.
+  //
+  // We deliberately DO NOT touch `transform` here. Some sites (notably
+  // Google search) wrap a heading row in a `transform`-ed parent and put
+  // a counter-`transform` on the heading itself via inline style. If we
+  // killed transform on our cloned element, we'd kill the counter and the
+  // clone would render upside-down. Instead, insertTranslation copies
+  // `el.style.cssText` so any such counter-transform comes along for free.
+  function applyDefenseStyle(el) {
+    const s = el.style;
+    s.setProperty('writing-mode', 'horizontal-tb', 'important');
+    s.setProperty('direction', 'ltr', 'important');
+    s.setProperty('unicode-bidi', 'normal', 'important');
+  }
+
   function insertTranslation(el, translatedText) {
     removeSpinner(el);
 
@@ -392,27 +458,31 @@
       span.className = BILINGUAL_CLASS + ' tt-inline-translation';
       span.textContent = translatedText;
       span.setAttribute(DATA_ATTR, '1');
+      applyDefenseStyle(span);
       el.appendChild(span);
       el.setAttribute(DATA_ATTR, '1');
       el.removeAttribute(DATA_RETRY);
       return;
     }
 
-    // Mirror the source element's tag AND className so the translation
-    // inherits exactly the same host CSS:
+    // Mirror the source element's tag, className AND inline style so the
+    // translation inherits exactly the same host CSS:
     //   <h2 class="title heading"> (centered, big)        → same look
     //   <p>                       (normal paragraph)      → same look
     //   <h3 class="landmark">     (accessibility-hidden)  → also hidden
     //   <dt class="rating tags">  (metadata grid cell)    → fits the grid
-    // We only ADD our own class on top, never replace, so existing styling
-    // wins on layout and we win on the bookkeeping (the :not() selector
+    //   <h3 style="transform:rotate(180deg)"> (counter-rotated to undo a
+    //                              parent transform)      → also undoes it
+    // We add our own class on top for bookkeeping (the :not() selector
     // and the data-attr that prevents re-translation).
     const tag = el.tagName.toLowerCase();
     const line = document.createElement(tag);
-    if (el.className) line.className = el.className;
+    if (el.className)        line.className     = el.className;
+    if (el.style && el.style.cssText) line.style.cssText = el.style.cssText;
     line.classList.add(BILINGUAL_CLASS);
     line.textContent = translatedText;
     line.setAttribute(DATA_ATTR, '1');
+    applyDefenseStyle(line);
     el.after(line);
     el.setAttribute(DATA_ATTR, '1');
     el.removeAttribute(DATA_RETRY);

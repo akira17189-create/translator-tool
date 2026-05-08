@@ -5,14 +5,25 @@
  */
 
 /* ─── Bilingual injected line ────────────────────────────────────────── */
-/* The translation element is a clone of the source element's tag + class,
- * so all host-page styling (font, size, alignment, accessibility hiding,
- * grid placement, etc.) applies naturally. We add this class only as a
- * marker so SELECTORS can exclude these via :not(.tt-bilingual-line) and
- * give the entrance a small fade-in. Don't add layout overrides here —
- * they would fight the host CSS we deliberately want to inherit.
+/* The translation element is a clone of the source element's tag, class,
+ * AND inline style (see insertTranslation in bilingual.js). Font / color /
+ * alignment / accessibility hiding therefore inherit naturally.
+ *
+ * The !important resets below defend against host CSS that would render the
+ * translation sideways or RTL. We do NOT reset `transform` here because
+ * some sites (Google search) put a counter-`transform` on the source via
+ * inline style to undo a parent's transform — copying that inline style
+ * onto the clone is the only way to keep the translation upright; an
+ * `!important` override would defeat the counter and flip us upside-down.
+ *
+ * `display` is also intentionally left alone: a sibling-cloned <td>/<th>
+ * needs to stay table-cell, an item in a flex row should stay a flex item,
+ * etc. The cloned tag + class already gives the right default.
  */
 .tt-bilingual-line {
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+  unicode-bidi: normal !important;
   animation: tt-bilingual-rise 0.3s ease-out both;
 }
 
@@ -25,9 +36,15 @@
 /* Inline translation appended INSIDE buttons/links/flex-grid items where a
  * sibling clone would break layout or kill click handlers. Forced to block
  * so it sits BELOW the original text rather than wrapping awkwardly inline,
- * dimmed slightly so the original (interactive) line still reads first. */
+ * dimmed slightly so the original (interactive) line still reads first.
+ * Like .tt-bilingual-line, transform is intentionally not reset — the
+ * span sits INSIDE the source element, so any counter-transform applied
+ * to the source already covers us via the parent transform context. */
 .tt-inline-translation {
-  display: block;
+  display: block !important;
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+  unicode-bidi: normal !important;
   font-size: 0.92em;
   font-weight: inherit;
   opacity: 0.85;
@@ -36,9 +53,14 @@
   pointer-events: none;
 }
 
+/* Opacity-only fade-in. We previously used a translateY rise too, but
+ * .tt-bilingual-line now sets `transform: none !important` to defend
+ * against host-page rotation, which would defeat any animated transform.
+ * Just fading in still reads as "something appeared" without the visual
+ * conflict. */
 @keyframes tt-bilingual-rise {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* ─── Translation loading spinner ─────────────────────────────────────── */
