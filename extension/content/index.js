@@ -2,18 +2,21 @@
 // Boots bilingual.js and routes popup toggle messages.
 //
 // Pref semantics:
-//   translateEnabled (bool, default true)
-//     Master kill switch. Off = NO translation anywhere, period.
+//   site:<hostname> (bool, default true)
+//     Persistent per-host preference. ON or undefined = "translate this site
+//     by default on every visit"; false = "don't auto-translate". The popup's
+//     翻译此网站 toggle controls this.
 //   bilingualEnabled (bool, default true)
 //     Display mode when translation runs.
 //       true  → 双语对照 (source + translation both visible)
 //       false → 仅显示译文 (replace mode — source hidden via CSS)
-//   site:<hostname> (bool, default true)
-//     Per-site override.
-//       false → never translate this site
-//       true / undefined → translate this site (subject to master)
 //   hoverEnabled (bool, default false)
 //     Ctrl+' on hover triggers single-paragraph translate.
+//
+// Note: 启用翻译 (the popup's master toggle) is intentionally NOT persisted —
+// it represents "is this page actively translating right now". Initialised
+// from site:<host> on load, then user-controlled in-session via GET_STATE /
+// TOGGLE_ENABLED messages. Closing the tab or reloading drops it.
 
 'use strict';
 
@@ -43,22 +46,21 @@
     }
   }
 
-  function shouldTranslate(prefs, sitePrefs) {
-    // Master kill switch beats everything.
-    if (prefs.translateEnabled === false) return false;
-    // Per-site explicit OFF beats default.
-    const siteVal = sitePrefs[getSiteKey()];
-    if (siteVal === false) return false;
-    // Otherwise translate.
-    return true;
+  function bootFromStoredMode() {
+    chrome.storage.local.get({ bilingualEnabled: true }, prefs => {
+      bootBilingual(modeFromBool(prefs.bilingualEnabled));
+    });
   }
 
   // ─── Init from saved prefs ──────────────────────────────────────────
+  // Initial decision is purely site:<host>: if user has explicitly turned
+  // 翻译此网站 OFF for this host, don't translate; otherwise go.
   chrome.storage.local.get(
-    { translateEnabled: true, bilingualEnabled: true, hoverEnabled: false },
+    { bilingualEnabled: true, hoverEnabled: false },
     prefs => {
       chrome.storage.local.get([getSiteKey()], sitePrefs => {
-        if (shouldTranslate(prefs, sitePrefs)) {
+        const siteVal = sitePrefs[getSiteKey()];
+        if (siteVal !== false) {
           bootBilingual(modeFromBool(prefs.bilingualEnabled));
         }
         if (window.ttBilingual?.setHover) {
@@ -69,23 +71,21 @@
   );
 
   // ─── Toggle messages from popup ────────────────────────────────────
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'GET_STATE') {
+      // Popup uses this to render the 启用翻译 toggle to match what's
+      // actually happening on the page right now.
+      sendResponse({ enabled: bilingualActive });
+      return;
+    }
+
     if (msg.type === 'TOGGLE_ENABLED') {
-      // Master switch.
+      // 启用翻译 — current-page only, no storage write. The popup's job
+      // is to send the user's intent; we just honour it directly.
       if (msg.enabled === false) {
         shutdownBilingual();
       } else {
-        // Re-evaluate everything — site might still be explicitly OFF.
-        chrome.storage.local.get(
-          { bilingualEnabled: true },
-          prefs => {
-            chrome.storage.local.get([getSiteKey()], sitePrefs => {
-              const siteVal = sitePrefs[getSiteKey()];
-              if (siteVal === false) return;  // site explicitly off
-              bootBilingual(modeFromBool(prefs.bilingualEnabled));
-            });
-          }
-        );
+        bootFromStoredMode();
       }
       return;
     }
@@ -95,9 +95,6 @@
       const mode = modeFromBool(msg.enabled);
       if (bilingualActive) {
         window.ttBilingual.setDisplayMode?.(mode);
-      } else {
-        // Translation might be off via master or per-site. Don't auto-enable
-        // here — only the master and per-site toggles do that.
       }
     }
 
@@ -106,17 +103,13 @@
     }
 
     if (msg.type === 'TOGGLE_SITE') {
-      // Per-site explicit on/off.
+      // 翻译此网站 cascades into 启用翻译: flipping the persistent
+      // preference also brings current-page state into line, so the user
+      // sees "remember + apply now" without two clicks.
       if (msg.enabled === false) {
         shutdownBilingual();
       } else {
-        chrome.storage.local.get(
-          { translateEnabled: true, bilingualEnabled: true },
-          prefs => {
-            if (prefs.translateEnabled === false) return;
-            bootBilingual(modeFromBool(prefs.bilingualEnabled));
-          }
-        );
+        bootFromStoredMode();
       }
     }
 

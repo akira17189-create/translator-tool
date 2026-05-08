@@ -62,6 +62,45 @@
     'blockquote:not(:has(p))',
   ].map(s => s + ':not(.tt-bilingual-line)').join(', ');
 
+  // ─── "Rogue text container" detection ────────────────────────────────
+  // Modern marketing/blog pages frequently put paragraph-shaped content in a
+  // bare <div class="callout"> / <aside> / <figcaption> / standalone <a>
+  // button — never wrapping it in a real <p>. Those slip past SELECTORS and
+  // stay untranslated. We catch them with a second pass that requires:
+  //   1. The element holds a *direct* text-node child with letters (so it
+  //      really is paragraph-like, not a layout wrapper).
+  //   2. No descendant is itself a paragraph-like target — otherwise the
+  //      child would translate and we'd double-up.
+  //   3. No ancestor is a paragraph-like target — same anti-dup reason.
+  //   4. Not inside <nav>/<header>/<footer> — avoids translating menu
+  //      buttons/links and breaking horizontal nav layout.
+  // <span>/<strong>/<em> are intentionally excluded: they're nearly always
+  // mid-paragraph inline children whose text is already covered by the
+  // enclosing <p>.
+  const ROGUE_CANDIDATES_SELECTOR =
+    'div, aside, section, figcaption, summary, li, td, th, a, button';
+  const PARA_LIKE_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, dt, dd, blockquote';
+  const CHROME_ANCESTOR_SELECTOR = 'nav, header, footer, [role="navigation"]';
+
+  function hasDirectTextChild(el) {
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE && HAS_LETTER_RE.test(node.textContent)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isRogueTextContainer(el) {
+    if (el.classList.contains(BILINGUAL_CLASS)) return false;
+    if (el.querySelector(PARA_LIKE_SELECTOR)) return false;
+    if (!hasDirectTextChild(el)) return false;
+    const parent = el.parentElement;
+    if (parent && parent.closest(PARA_LIKE_SELECTOR)) return false;
+    if (el.closest(CHROME_ANCESTOR_SELECTOR)) return false;
+    return true;
+  }
+
   let intersectionObs = null;
   let mutationObs     = null;
   let hoverEnabled    = false;
@@ -321,8 +360,44 @@
     return false;
   }
 
+  // Some elements break visually (or functionally) if we drop a sibling clone
+  // next to them: a <button>'s click handler lives on the original id, so the
+  // sibling clone is dead; flex/grid items add an extra cell and double the
+  // grid; absolute/fixed elements stack on top of each other in the same
+  // position. For those we instead append the translation INSIDE the original
+  // as a <span class="tt-bilingual-line tt-inline-translation"> — the original
+  // keeps its handlers, attributes, and layout slot; the translation flows
+  // below it as a block-styled span.
+  function shouldAppendInside(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'button' || tag === 'a') return true;
+    const cs = window.getComputedStyle(el);
+    const pos = cs.position;
+    if (pos === 'absolute' || pos === 'fixed' || pos === 'sticky') return true;
+    const parent = el.parentElement;
+    if (parent) {
+      const pd = window.getComputedStyle(parent).display;
+      if (pd === 'flex' || pd === 'inline-flex' || pd === 'grid' || pd === 'inline-grid') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function insertTranslation(el, translatedText) {
     removeSpinner(el);
+
+    if (shouldAppendInside(el)) {
+      const span = document.createElement('span');
+      span.className = BILINGUAL_CLASS + ' tt-inline-translation';
+      span.textContent = translatedText;
+      span.setAttribute(DATA_ATTR, '1');
+      el.appendChild(span);
+      el.setAttribute(DATA_ATTR, '1');
+      el.removeAttribute(DATA_RETRY);
+      return;
+    }
+
     // Mirror the source element's tag AND className so the translation
     // inherits exactly the same host CSS:
     //   <h2 class="title heading"> (centered, big)        → same look
@@ -362,7 +437,12 @@
       });
     } catch (_) {}
     if (displayMode === 'replace') {
-      sources.forEach(el => el.classList.add(SOURCE_HIDDEN));
+      sources.forEach(el => {
+        // appendInside elements host the translation as a child span — hiding
+        // the source would hide the translation too. Leave them alone.
+        if (el.querySelector('.tt-inline-translation')) return;
+        el.classList.add(SOURCE_HIDDEN);
+      });
     } else {
       sources.forEach(el => el.classList.remove(SOURCE_HIDDEN));
     }
@@ -480,6 +560,13 @@
         intersectionObs.observe(p);
       }
     });
+    // Second pass: rogue text containers (callout boxes, standalone CTAs).
+    document.querySelectorAll(ROGUE_CANDIDATES_SELECTOR).forEach(el => {
+      const attr = el.getAttribute(DATA_ATTR);
+      if (attr === '1' || attr === 'pending') return;
+      if (!isRogueTextContainer(el)) return;
+      intersectionObs.observe(el);
+    });
   }
 
   // ─── Hover + Ctrl key to translate ───────────────────────────────────
@@ -551,14 +638,17 @@
     if (!intersectionObs) return;
     // Clear any previous failure marks so users see fresh state.
     document.querySelectorAll('.' + FAIL_CLASS).forEach(m => m.remove());
-    document.querySelectorAll(SELECTORS).forEach(p => {
-      const attr = p.getAttribute(DATA_ATTR);
-      if (attr !== '1' && attr !== 'pending') {
-        p.removeAttribute(DATA_RETRY);
-        p.removeAttribute('data-tt-error');
-        // Re-translate immediately rather than waiting for intersection.
-        translateParagraph(p);
-      }
+    const retryOne = el => {
+      const attr = el.getAttribute(DATA_ATTR);
+      if (attr === '1' || attr === 'pending') return;
+      el.removeAttribute(DATA_RETRY);
+      el.removeAttribute('data-tt-error');
+      // Re-translate immediately rather than waiting for intersection.
+      translateParagraph(el);
+    };
+    document.querySelectorAll(SELECTORS).forEach(retryOne);
+    document.querySelectorAll(ROGUE_CANDIDATES_SELECTOR).forEach(el => {
+      if (isRogueTextContainer(el)) retryOne(el);
     });
   }
 

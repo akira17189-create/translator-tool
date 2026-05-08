@@ -69,37 +69,46 @@
 
     const hostname = await getCurrentHostname();
     if (siteLabel && hostname) {
-      siteLabel.textContent = hostname;
+      siteLabel.textContent = '仅对 ' + hostname + ' 生效 · 会被记住';
     }
 
     const prefs = await new Promise(resolve =>
       chrome.storage.local.get(
-        ['translateEnabled', 'bilingualEnabled', 'hoverEnabled'],
+        ['bilingualEnabled', 'hoverEnabled'],
         resolve
       )
     );
-    // Master defaults to ON
-    renderToggle(tEnabled, prefs.translateEnabled ?? true);
-    renderToggle(tBi,      prefs.bilingualEnabled ?? true);
-    renderToggle(tHover,   prefs.hoverEnabled     ?? false);
+    renderToggle(tBi,    prefs.bilingualEnabled ?? true);
+    renderToggle(tHover, prefs.hoverEnabled     ?? false);
 
     // Per-site toggle: undefined = default ON (translate by default).
     // Only false means "explicitly disabled here".
+    let siteEnabled = true;
     if (hostname) {
       const sitePrefs = await new Promise(resolve =>
         chrome.storage.local.get(['site:' + hostname], resolve)
       );
       const siteVal = sitePrefs['site:' + hostname];
-      renderToggle(tSite, siteVal !== false);
+      siteEnabled = siteVal !== false;
+      renderToggle(tSite, siteEnabled);
     }
+
+    // 启用翻译 reflects the page's CURRENT state (one-shot, not persisted).
+    // Ask the content script directly; if it isn't loaded (e.g. chrome://
+    // pages, or popup opened before the page settles) fall back to the
+    // persistent site preference so the toggle is at least sensible.
+    const state = await sendToTab({ type: 'GET_STATE' });
+    const currentEnabled = state ? !!state.enabled : siteEnabled;
+    renderToggle(tEnabled, currentEnabled);
   }
 
   // ─── Wire toggles ──────────────────────────────────────────────────────
-  // Master switch — when off, nothing else translates.
+  // 启用翻译 — current page only. NOT persisted: closing the tab or reloading
+  // resets it to whatever 翻译此网站 says. The user's intent is just "for now,
+  // run/stop translation here".
   tEnabled.addEventListener('click', async () => {
     const next = !tEnabled.classList.contains('on');
     renderToggle(tEnabled, next);
-    await new Promise(r => chrome.storage.local.set({ translateEnabled: next }, r));
     sendToTab({ type: 'TOGGLE_ENABLED', enabled: next });
   });
 
@@ -117,12 +126,15 @@
     sendToTab({ type: 'TOGGLE_HOVER', enabled: next });
   });
 
-  // Per-site toggle — store explicit true/false. OFF really means "don't
-  // translate this site"; ON means "translate this site". No more "remove
-  // key on off" tristate weirdness.
+  // 翻译此网站 — persistent per-host preference. Flipping it cascades into
+  // current-page state (启用翻译 visually + content script's bilingualActive)
+  // so "remember + apply now" is one click. The user's intuition is that
+  // turning ON 翻译此网站 should immediately start translating, and turning
+  // OFF should immediately stop.
   tSite.addEventListener('click', async () => {
     const next = !tSite.classList.contains('on');
     renderToggle(tSite, next);
+    renderToggle(tEnabled, next);
     const hostname = await getCurrentHostname();
     if (!hostname) return;
     await new Promise(r => chrome.storage.local.set({ ['site:' + hostname]: next }, r));
